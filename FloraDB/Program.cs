@@ -8,6 +8,7 @@
     using System.Reflection;
     using System.Runtime.InteropServices;
     using System.Text;
+    using System.Threading.Tasks;
     using System.Web;
 
     using Microsoft.Office.Interop.Excel;
@@ -67,17 +68,40 @@
             var usedRange = worksheet.UsedRange;
             var num = 0;
             var num2 = 0;
+
+            List<Task<List<string[]>>> tasks = new List<Task<List<string[]>>>();
+
             foreach (Range range in usedRange.Rows)
             {
                 var row = range.Row;
                 object obj = (range.Cells[1, Missing.Value] as Range).Value;
                 if (obj != null)
+
+                    tasks.Add(new Task<List<string[]>>(() =>
+                                {
+                                    var data = GetPlantRecords(obj as string);
+                                    return ParseResult(data);
+                                }));
+            }
+
+            foreach (var task in tasks)
+                task.Start();
+            Task.WaitAll(tasks.ToArray());
+            int counter = 0;
+
+            foreach (Range range in usedRange.Rows)
+            {
+                var row = range.Row;
+                object obj = (range.Cells[1, Missing.Value] as Range).Value;
+                if (obj != null)
+                {
+                    var list = tasks[counter++].Result;
                     try
                     {
-                        var data = GetPlantRecords(obj as string);
-                        var list = ParseResult(data);
-                        if (list == null || list.Count <= 1)
+                        if(list == null || list.Count ==0)
                             throw new Exception();
+
+                        Console.WriteLine($"Writing {counter}/{tasks.Count}:{obj}..");
                         string text = null;
                         for (var i = num2; i < list.Count; i++)
                             if (num2 == 0)
@@ -97,12 +121,12 @@
                     }
                     catch (Exception)
                     {
-                        obj = " ;-)";
                         num++;
                         worksheet2.Cells[num, 1] = obj;
                         worksheet2.Cells[num, 2] = "NOT IN DATABASE!!";
-                        Console.WriteLine("NOT IN DATABASE!!");
+                        Console.WriteLine($"{obj} NOT IN DATABASE!!");
                     }
+                }
             }
 
             workbook.Save();
